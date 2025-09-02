@@ -1,19 +1,13 @@
 # to_do_list_app.py
 import streamlit as st
-import pandas as pd
-import os
 from datetime import date
 
 st.set_page_config(page_title="To-Do List App", page_icon="✅")
 
 st.title("📝 To-Do List App")
 
-CSV_FILE = "tasks.csv"
-
-# --- Load tasks from CSV if available ---
-if os.path.exists(CSV_FILE):
-    st.session_state.tasks = pd.read_csv(CSV_FILE).to_dict("records")
-else:
+# --- Initialize session state ---
+if "tasks" not in st.session_state:
     st.session_state.tasks = []
 
 # --- Add a new task ---
@@ -25,33 +19,63 @@ with st.form("task_form", clear_on_submit=True):
     submitted = st.form_submit_button("Add Task")
 
     if submitted and task_text:
-        # Append task
         st.session_state.tasks.append(
-            {"task": task_text, "category": category, "priority": priority, "due_date": str(due_date)}
+            {
+                "task": task_text,
+                "category": category,
+                "priority": priority,
+                "due_date": str(due_date),
+                "completed": False,
+            }
         )
 
-        # Save to CSV
-        pd.DataFrame(st.session_state.tasks).to_csv(CSV_FILE, index=False)
+# --- Filters ---
+st.sidebar.header("🔍 Filters")
+filter_category = st.sidebar.selectbox("Filter by Category", ["All", "Work", "Personal", "Urgent", "Other"])
+filter_priority = st.sidebar.selectbox("Filter by Priority", ["All", "High", "Medium", "Low"])
+
+# --- Clear all tasks ---
+if st.sidebar.button("🗑️ Clear All Tasks"):
+    st.session_state.tasks = []
+    st.experimental_rerun()
 
 # --- Display tasks ---
 st.subheader("Your Tasks")
 
 if st.session_state.tasks:
-    df = pd.DataFrame(st.session_state.tasks)
+    # Filter
+    tasks = st.session_state.tasks
+    if filter_category != "All":
+        tasks = [t for t in tasks if t["category"] == filter_category]
+    if filter_priority != "All":
+        tasks = [t for t in tasks if t["priority"] == filter_priority]
 
-    # Sort by priority (High > Medium > Low), then due date
-    priority_order = {"High": 1, "Medium": 2, "Low": 3}
-    df["priority_order"] = df["priority"].map(priority_order)
-    df = df.sort_values(by=["priority_order", "due_date"])
+    # Progress bar
+    completed_count = sum(1 for t in tasks if t["completed"])
+    if len(tasks) > 0:
+        st.progress(completed_count / len(tasks))
 
-    for i, row in df.iterrows():
-        cols = st.columns([5, 2, 2, 1])
-        cols[0].write(f"**{row['task']}**")
-        cols[1].write(f"📌 {row['category']}")
-        cols[2].write(f"🔥 {row['priority']} | 📅 {row['due_date']}")
-        if cols[3].button("❌", key=f"del_{i}"):
+    # Show tasks
+    for i, task in enumerate(tasks):
+        cols = st.columns([3, 2, 2, 1, 1])
+        if cols[0].checkbox(task["task"], value=task["completed"], key=f"chk_{i}"):
+            st.session_state.tasks[i]["completed"] = True
+        else:
+            st.session_state.tasks[i]["completed"] = False
+
+        cols[1].write(f"📌 {task['category']}")
+        cols[2].write(f"🔥 {task['priority']} | 📅 {task['due_date']}")
+
+        # Edit button
+        if cols[3].button("✏️", key=f"edit_{i}"):
+            new_text = st.text_input("Edit task", value=task["task"], key=f"edit_text_{i}")
+            if st.button("Save", key=f"save_{i}"):
+                st.session_state.tasks[i]["task"] = new_text
+                st.experimental_rerun()
+
+        # Delete button
+        if cols[4].button("❌", key=f"del_{i}"):
             st.session_state.tasks.pop(i)
-            pd.DataFrame(st.session_state.tasks).to_csv(CSV_FILE, index=False)
             st.experimental_rerun()
 else:
     st.write("✅ No tasks yet!")
